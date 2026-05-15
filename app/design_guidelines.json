@@ -1,0 +1,90 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "emotional_tone": "Authoritative, Secure, Institutional, Distraction-Free",
+  "colors": {
+    "background_primary": "#FFFFFF",
+    "background_secondary": "#F4F4F5",
+    "surface": "#FFFFFF",
+    "text_primary": "#09090B",
+    "text_secondary": "#71717A",
+    "border": "#E4E4E7",
+    "primary": "#2563EB",
+    "primary_hover": "#1D4ED8",
+    "danger": "#E11D48",
+    "danger_bg": "#FFE4E6",
+    "warning": "#F59E0B",
+    "success": "#16A34A",
+    "chart_colors": [
+      "#18181B",
+      "#71717A",
+      "#E11D48",
+      "#2563EB"
+    ]
+  },
+  "typography": {
+    "font_heading": "Outfit",
+    "font_body": "IBM Plex Sans",
+    "font_mono": "IBM Plex Mono",
+    "rules": {
+      "h1": "text-4xl md:text-5xl font-bold tracking-tight text-zinc-900",
+      "h2": "text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900",
+      "h3": "text-xl font-medium tracking-tight text-zinc-900",
+      "body": "text-base text-zinc-700 leading-relaxed",
+      "small_label": "text-xs font-mono uppercase tracking-[0.2em] text-zinc-500",
+      "timer": "text-3xl font-mono font-medium tracking-tight text-zinc-900"
+    }
+  },
+  "layout_spacing": {
+    "page_padding": "p-4 md:p-8 lg:p-12",
+    "container_max_width": "max-w-7xl mx-auto",
+    "grid_dashboard": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-6",
+    "surface_strategy": "Flat solid surfaces with 1px border-zinc-200, no drop shadows. Strictly 2D and technical to reflect an authoritative enterprise tool."
+  },
+  "components": {
+    "buttons": "Rounded-sm, flat colors. Primary uses bg-blue-600 text-white, secondary uses bg-zinc-100 text-zinc-900. No soft shadows. High contrast.",
+    "cards": "border border-zinc-200 rounded-sm bg-white p-6. No shadow. Minimalist. Let the typography do the work.",
+    "inputs": "Shadcn inputs. rounded-sm, border-zinc-300, focus:ring-2 focus:ring-blue-600 focus:border-transparent.",
+    "webcam_overlay": "Fixed bottom-right or top-right. 1px border-zinc-200. Optional: Green/Red glowing 1px inner border to indicate eye-tracking/focus status.",
+    "trust_score": "High contrast gauge. Mostly monochrome with a color-coded indicator (Green > 80, Yellow 50-80, Red < 50)."
+  },
+  "motion": {
+    "page_transitions": "None or instant. Emphasize speed and reliability over aesthetic motion.",
+    "hover_states": "bg-zinc-100 transition-colors duration-200 ease-in-out",
+    "alerts": "Slide-in from top, high-contrast borders."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1775709610612-c589e29679ea?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MTJ8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjBvZmZpY2UlMjBtb2Rlcm4lMjB3b3Jrc3BhY2V8ZW58MHx8fHwxNzc3Nzk1NDQyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "landing_hero",
+        "description": "Modern corporate office space for the public landing page hero."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1620829813573-7c9e1877706f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwxfHxmb2N1c2VkJTIwc3R1ZGVudCUyMHRha2luZyUyMGV4YW0lMjBsYXB0b3B8ZW58MHx8fHwxNzc3Nzk1NDQzfDA&ixlib=rb-4.1.0&q=85",
+        "category": "student_placeholder",
+        "description": "Placeholder for student profile or monitoring feed."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1601348952780-d58c09dc0d4a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwzfHxmb2N1c2VkJTIwc3R1ZGVudCUyMHRha2luZyUyMGV4YW0lMjBsYXB0b3B8ZW58MHx8fHwxNzc3Nzk1NDQzfDA&ixlib=rb-4.1.0&q=85",
+        "category": "testimonial_or_feature",
+        "description": "Focused student taking exam, for feature sections on landing page."
+      }
+    ]
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "Regular or Bold weight. No duotone. Monochrome unless indicating an alert state."
+  },
+  "instructions_to_main_agent": [
+    "Install fonts via Google Fonts: Outfit, IBM Plex Sans, and IBM Plex Mono.",
+    "Install Phosphor Icons: yarn add @phosphor-icons/react",
+    "Apply strict Swiss minimalist principles: use raw grid lines and ample white space instead of shaded cards. The UI must feel like an objective, precise enterprise tool.",
+    "For the admin dashboard, create a high-density 'Control Room' grid layout.",
+    "For the student quiz interface, use a full-screen, distraction-free view with fixed timer/webcam components. Hide standard navigation.",
+    "The trust score and proctoring alerts MUST use high contrast 'danger' colors (Signal Red) to break the monochrome theme only when necessary.",
+    "Use purely structural HTML/Tailwind for layouts, but integrate Shadcn UI heavily customized with minimal border radius (rounded-sm or rounded-none) to match the brutalist Swiss style.",
+    "Ensure all interactive and key informational elements include data-testid attributes for robust automated testing (e.g., data-testid='start-quiz-button')."
+  ]
+}
