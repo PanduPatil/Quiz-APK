@@ -19,7 +19,16 @@ export default function QuizEditor() {
   const [form, setForm] = useState({ text: "", options: ["", "", "", ""], correct_index: 0, difficulty: "medium", topic: "General" });
   const [addOpen, setAddOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiForm, setAiForm] = useState({ topic: "", difficulty: "medium", count: 5, details: "", question_type: "mcq" });
+  const [aiForm, setAiForm] = useState({
+    topic: "",
+    difficulty: "medium",
+    count: 5,
+    details: "",
+    question_type: quiz?.question_type || "mcq",
+    model: "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    language: "python",
+  });
+  const [aiModels, setAiModels] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assigned, setAssigned] = useState([]);
@@ -28,6 +37,7 @@ export default function QuizEditor() {
     api.get(`/quizzes/${quizId}`).then(r => { setQuiz(r.data); setAssigned(r.data.assigned_to || []); }),
     api.get(`/quizzes/${quizId}/questions`).then(r => setQuestions(r.data)),
     api.get("/admin/users").then(r => setUsers(r.data)),
+    api.get("/questions/ai-models").then(r => setAiModels(r.data)).catch(() => setAiModels([])),
   ]);
   useEffect(() => { load(); }, [quizId]);
 
@@ -77,8 +87,8 @@ export default function QuizEditor() {
       <Button variant="ghost" size="sm" onClick={() => nav("/admin/quizzes")} className="rounded-sm" data-testid="back-to-quizzes">
         <ArrowLeft className="w-4 h-4 mr-2"/>Back
       </Button>
-      <div className="mt-3 flex items-start justify-between gap-6">
-        <div>
+      <div className="mt-3 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+        <div className="min-w-0">
           <div className="label-mono">Quiz editor</div>
           <h1 className="font-heading text-4xl font-bold tracking-tight mt-1">{quiz.title}</h1>
           <p className="text-zinc-600 mt-2 max-w-2xl">{quiz.description}</p>
@@ -86,7 +96,7 @@ export default function QuizEditor() {
             {quiz.duration_minutes} min - {quiz.approved_question_count ?? questions.filter(q => q.is_approved !== false).length} approved - {quiz.pending_question_count ?? questions.filter(q => q.is_approved === false).length} pending - {assigned.length} assigned
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
+        <div className="flex gap-2 flex-wrap justify-start lg:justify-end">
           <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="rounded-sm" data-testid="assign-button"><Users className="w-4 h-4 mr-2"/>Assign</Button>
@@ -114,9 +124,20 @@ export default function QuizEditor() {
             <DialogContent className="rounded-sm">
               <DialogHeader><DialogTitle className="font-heading">AI-generate questions</DialogTitle></DialogHeader>
               <div className="space-y-3">
-                <div><Label>Topic</Label><Input value={aiForm.topic} onChange={e => setAiForm({...aiForm, topic: e.target.value})} placeholder={quiz.topics?.join(", ") || "Use quiz details"} className="rounded-sm mt-1" data-testid="ai-topic-input"/></div>
-                <div><Label>Extra details for this batch</Label><Textarea value={aiForm.details} onChange={e => setAiForm({...aiForm, details: e.target.value})} placeholder="Chapter, learning objectives, grade level, language, concepts to include or avoid" className="rounded-sm mt-1"/></div>
+                <div><Label>Admin prompt / source details</Label><Textarea value={aiForm.details} onChange={e => setAiForm({...aiForm, details: e.target.value})} placeholder="Paste the full syllabus, chapter, outcomes, constraints, sample topics, and exact question style you want. The generator will use this as the primary source." className="rounded-sm mt-1 min-h-32" data-testid="ai-details-input"/></div>
+                <div><Label>Topic focus</Label><Input value={aiForm.topic} onChange={e => setAiForm({...aiForm, topic: e.target.value})} placeholder={quiz.topics?.join(", ") || "Use quiz details"} className="rounded-sm mt-1" data-testid="ai-topic-input"/></div>
                 <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Assessment type</Label>
+                    <Select value={aiForm.question_type} onValueChange={(v) => setAiForm({...aiForm, question_type: v})}>
+                      <SelectTrigger className="rounded-sm mt-1" data-testid="ai-type-select"><SelectValue/></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mcq">MCQ</SelectItem>
+                        <SelectItem value="coding">Coding</SelectItem>
+                        <SelectItem value="composite">Composite</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div>
                     <Label>Difficulty</Label>
                     <Select value={aiForm.difficulty} onValueChange={(v) => setAiForm({...aiForm, difficulty: v})}>
@@ -124,12 +145,42 @@ export default function QuizEditor() {
                       <SelectContent><SelectItem value="easy">Easy</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="hard">Hard</SelectItem></SelectContent>
                     </Select>
                   </div>
-                  <div><Label>Count</Label><Input type="number" min="1" max="10" value={aiForm.count} onChange={e => setAiForm({...aiForm, count: e.target.value})} className="rounded-sm mt-1" data-testid="ai-count-input"/></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>AI model</Label>
+                    <Select value={aiForm.model} onValueChange={(v) => setAiForm({...aiForm, model: v})}>
+                      <SelectTrigger className="rounded-sm mt-1" data-testid="ai-model-select"><SelectValue/></SelectTrigger>
+                      <SelectContent>
+                        {(aiModels.length ? aiModels : [{ id: "Qwen/Qwen3-30B-A3B-Instruct-2507", label: "Qwen3 30B A3B Instruct" }]).map(m => (
+                          <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Language</Label>
+                    <Select value={aiForm.language} onValueChange={(v) => setAiForm({...aiForm, language: v})}>
+                      <SelectTrigger className="rounded-sm mt-1" data-testid="ai-language-select"><SelectValue/></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="python">Python</SelectItem>
+                        <SelectItem value="javascript">JavaScript</SelectItem>
+                        <SelectItem value="java">Java</SelectItem>
+                        <SelectItem value="csharp">C#</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div><Label>Count</Label><Input type="number" min="1" max="20" value={aiForm.count} onChange={e => setAiForm({...aiForm, count: e.target.value})} className="rounded-sm mt-1" data-testid="ai-count-input"/></div>
+                {aiModels.find(m => m.id === aiForm.model)?.best_for && (
+                  <div className="text-xs text-zinc-500 font-mono">{aiModels.find(m => m.id === aiForm.model)?.best_for}</div>
+                )}
+                <div className="text-xs text-amber-600 font-mono">
+                  Large Hugging Face models can take time to load/generate. Questions are saved as drafts until approved.
                 </div>
                 <Button onClick={aiGen} disabled={aiLoading} className="w-full rounded-sm bg-zinc-900 hover:bg-zinc-800" data-testid="ai-submit-button">
-                  {aiLoading ? "Generating..." : "Generate draft questions"}
+                  {aiLoading ? "Generating with selected model..." : "Generate draft questions"}
                 </Button>
-                <p className="text-xs text-zinc-500 font-mono">Uses the backend local Hugging Face model. Generated questions stay pending until approved.</p>
               </div>
             </DialogContent>
           </Dialog>
@@ -178,21 +229,25 @@ export default function QuizEditor() {
           <div key={q.id} className={`p-5 ${i !== 0 ? "border-t border-zinc-200" : ""}`} data-testid={`question-row-${q.id}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
+                <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
                   <span className="label-mono">Q{i + 1}</span>
                   <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-sm bg-zinc-100 border border-zinc-200">{q.difficulty}</span>
                   <span className={`text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-sm border ${isApproved ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-700"}`}>{isApproved ? "approved" : "pending"}</span>
                   {q.source === "ai" && <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-sm bg-violet-50 border border-violet-200 text-violet-700">AI</span>}
+                  <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-sm bg-sky-50 border border-sky-200 text-sky-700">{q.question_type || "mcq"}</span>
                   <span className="text-[10px] font-mono text-zinc-500">{q.topic}</span>
                 </div>
                 <div className="text-sm font-medium">{q.text}</div>
                 <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {q.options.map((opt, idx) => (
+                  {(q.options || []).map((opt, idx) => (
                     <div key={idx} className={`text-xs font-mono p-2 border rounded-sm ${idx === q.correct_index ? "border-emerald-600 bg-emerald-50 text-emerald-900" : "border-zinc-200"}`}>
                       {String.fromCharCode(65+idx)}. {opt}
                     </div>
                   ))}
                 </div>
+                {q.question_type === "coding" && (
+                  <pre className="mt-3 text-xs p-3 bg-zinc-950 text-zinc-100 overflow-auto rounded-sm">{q.starter_code || "No starter code"}</pre>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 {!isApproved && (

@@ -25,15 +25,15 @@ export default function StudentDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-white" data-testid="student-dashboard">
+    <div className="min-h-screen bg-gradient-to-b from-white to-zinc-50/60" data-testid="student-dashboard">
       <header className="border-b border-zinc-200">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
           <Link to="/" className="flex items-center gap-2" data-testid="student-logo-link">
             <div className="w-8 h-8 bg-zinc-900 text-white flex items-center justify-center font-heading font-bold text-sm">Q</div>
             <span className="font-heading font-semibold tracking-tight">QuizAPK/portal</span>
           </Link>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="text-right hidden sm:block">
               <div className="text-sm font-medium">{user?.name}</div>
               <div className="text-xs text-zinc-500">{user?.email}</div>
             </div>
@@ -44,14 +44,14 @@ export default function StudentDashboard() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <div className="label-mono">Candidate portal</div>
-        <h1 className="font-heading text-4xl font-bold tracking-tight mt-2">Your assessments</h1>
+        <h1 className="font-heading text-3xl sm:text-4xl font-bold tracking-tight mt-2">Your assessments</h1>
         <p className="text-zinc-600 mt-2 max-w-2xl">
           Only assessments assigned to you are visible below. Results remain confidential with the administrator per platform policy.
         </p>
 
-        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-px bg-zinc-200 border border-zinc-200">
+        <div className="mt-8 sm:mt-10 grid grid-cols-1 sm:grid-cols-3 gap-px bg-zinc-200 border border-zinc-200 rounded-md overflow-hidden">
           <Stat label="Assigned" value={quizzes.length}/>
           <Stat label="Completed" value={attempts.filter(a => a.status !== "in_progress").length}/>
           <Stat label="Pending" value={quizzes.length - attempts.filter(a => a.status !== "in_progress").length}/>
@@ -70,7 +70,7 @@ export default function StudentDashboard() {
               {quizzes.map((q) => {
                 const st = statusOf(q.id);
                 return (
-                  <div key={q.id} className="card-flat p-6" data-testid={`quiz-card-${q.id}`}>
+                  <div key={q.id} className="card-flat p-5 sm:p-6 rounded-lg btn-hover" data-testid={`quiz-card-${q.id}`}>
                     <div className="flex items-start justify-between">
                       <div className="label-mono">{q.topics?.join(" - ") || "General"}</div>
                       <StatusBadge status={st}/>

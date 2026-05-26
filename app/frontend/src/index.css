@@ -5,9 +5,8 @@
 body {
     margin: 0;
     font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
+        "Plus Jakarta Sans", "Segoe UI", "Inter", "Roboto", "Helvetica Neue",
+        Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -89,6 +88,11 @@ code {
 }
 
 @layer components {
+    .font-heading {
+        font-family:
+            "Space Grotesk", "Plus Jakarta Sans", "Segoe UI", "Inter", sans-serif;
+    }
+
     .label-mono {
         @apply font-mono text-[11px] uppercase tracking-widest text-zinc-500 dark:text-zinc-400;
     }
@@ -108,9 +112,30 @@ code {
         @apply inline-block h-2 w-2 rounded-full bg-emerald-500;
         box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
     }
+
+    .sidebar-item {
+        @apply flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50;
+    }
+
+    .sidebar-item.active {
+        @apply bg-zinc-900 text-white hover:bg-zinc-900 hover:text-white dark:bg-zinc-100 dark:text-zinc-900;
+    }
 }
 
 @layer utilities {
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .btn-hover {
+        @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-sm;
+    }
+
     .dark .bg-white {
         background-color: rgb(9 9 11);
     }

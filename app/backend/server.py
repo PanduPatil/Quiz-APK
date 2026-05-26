@@ -18,7 +18,7 @@ from models import (
     AIGenerateIn,
 )
 from auth import hash_password, verify_password, create_token, decode_token
-from ai_engine import next_difficulty, compute_trust_score, generate_questions_via_ai
+from ai_engine import HF_MODEL_OPTIONS, next_difficulty, compute_trust_score, generate_questions_via_ai
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env", encoding="utf-8-sig")
@@ -195,6 +195,11 @@ async def delete_question(qid: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+@api.get("/questions/ai-models")
+async def ai_models(admin: dict = Depends(require_admin)):
+    return HF_MODEL_OPTIONS
+
+
 @api.post("/questions/ai-generate")
 async def ai_generate(data: AIGenerateIn, admin: dict = Depends(require_admin)):
     quiz = await db.quizzes.find_one({"id": data.quiz_id}, {"_id": 0})
@@ -216,6 +221,8 @@ async def ai_generate(data: AIGenerateIn, admin: dict = Depends(require_admin)):
         session_id=f"gen-{admin['id']}-{data.quiz_id}",
         details=details,
         question_type=data.question_type,
+        model=data.model,
+        language=data.language,
     )
     inserted = 0
     created = []
@@ -305,6 +312,11 @@ async def next_question(attempt_id: str, user: dict = Depends(get_current_user))
         "options": q["options"],
         "difficulty": q["difficulty"],
         "topic": q["topic"],
+        "question_type": q.get("question_type", "mcq"),
+        "language": q.get("language", ""),
+        "starter_code": q.get("starter_code", ""),
+        "sample_input": q.get("sample_input", ""),
+        "sample_output": q.get("sample_output", ""),
         "question_number": answered + 1,
         "total": total,
     }
@@ -323,7 +335,7 @@ async def submit_answer(data: AnswerSubmit, user: dict = Depends(get_current_use
     if not q:
         raise HTTPException(404, "Question not found")
 
-    is_correct = data.selected_index == q["correct_index"]
+    is_correct = data.selected_index == q.get("correct_index", -1) if q.get("question_type", "mcq") != "coding" else False
     new_diff = next_difficulty(q["difficulty"], is_correct, data.time_taken_seconds)
 
     answer = {
@@ -333,6 +345,9 @@ async def submit_answer(data: AnswerSubmit, user: dict = Depends(get_current_use
         "is_correct": is_correct,
         "difficulty": q["difficulty"],
         "topic": q["topic"],
+        "question_type": q.get("question_type", "mcq"),
+        "code_answer": data.code_answer or "",
+        "language": data.language or q.get("language", ""),
         "time_taken_seconds": data.time_taken_seconds,
         "answered_at": now_iso(),
     }

@@ -9,7 +9,7 @@ function applyTheme(theme) {
 }
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState(() => localStorage.getItem("qp_theme") || "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("qp_theme") || "light");
 
   useEffect(() => {
     applyTheme(theme);

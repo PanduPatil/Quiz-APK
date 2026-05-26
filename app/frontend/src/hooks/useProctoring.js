@@ -9,17 +9,21 @@ export function useProctoring({ attemptId, enabled, onAutoSubmit, maxViolations 
   const [violations, setViolations] = useState([]);
   const [trustScore, setTrustScore] = useState(100);
   const [lastAlert, setLastAlert] = useState(null);
-  const seenRef = useRef(new Set());
+  const lastLogRef = useRef({});
 
   const logViolation = useCallback(async (type, severity = "medium", details = "") => {
     if (!enabled || !attemptId) return;
+    const now = Date.now();
+    const cooldown = severity === "high" ? 4000 : 7000;
+    if (lastLogRef.current[type] && now - lastLogRef.current[type] < cooldown) return;
+    lastLogRef.current[type] = now;
     try {
       const { data } = await api.post("/attempts/violation", {
         attempt_id: attemptId, type, severity, details,
       });
-      setViolations((prev) => [...prev, { type, severity, details, at: Date.now() }]);
+      setViolations((prev) => [...prev, { type, severity, details, at: now }]);
       if (typeof data.trust_score === "number") setTrustScore(data.trust_score);
-      setLastAlert({ type, at: Date.now() });
+      setLastAlert({ type, at: now });
       if (data.auto_submitted && onAutoSubmit) onAutoSubmit();
     } catch (e) { /* ignore */ }
   }, [attemptId, enabled, onAutoSubmit]);
@@ -28,9 +32,9 @@ export function useProctoring({ attemptId, enabled, onAutoSubmit, maxViolations 
     if (!enabled) return;
 
     const onVis = () => {
-      if (document.hidden) logViolation("tab_switch", "high", "Tab hidden");
+      if (document.hidden) logViolation("out_of_window", "high", "Assessment tab hidden");
     };
-    const onBlur = () => logViolation("focus_loss", "medium", "Window lost focus");
+    const onBlur = () => logViolation("out_of_window", "high", "Window lost focus");
     const onCopy = (e) => { e.preventDefault(); logViolation("copy_attempt", "medium"); };
     const onPaste = (e) => { e.preventDefault(); logViolation("paste_attempt", "high"); };
     const onContext = (e) => { e.preventDefault(); logViolation("right_click", "low"); };
@@ -60,8 +64,14 @@ export function useProctoring({ attemptId, enabled, onAutoSubmit, maxViolations 
     document.addEventListener("contextmenu", onContext);
     document.addEventListener("keydown", onKey);
     document.addEventListener("fullscreenchange", onFullScreenChange);
+    const focusPoll = setInterval(() => {
+      if (!document.hasFocus() || document.hidden) {
+        logViolation("out_of_window", "high", "Assessment is not the active focused window");
+      }
+    }, 10000);
 
     return () => {
+      clearInterval(focusPoll);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("copy", onCopy);

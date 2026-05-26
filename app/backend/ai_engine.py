@@ -1,10 +1,13 @@
-"""Adaptive quiz AI + local Hugging Face question generator."""
+"""Adaptive quiz AI + HuggingFace Inference API question generator with deduplication."""
 import asyncio
 import json
 import os
 import re
+import hashlib
+import httpx
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
@@ -16,34 +19,167 @@ except ImportError:
 load_dotenv(Path(__file__).parent / ".env", encoding="utf-8-sig")
 _GENERATOR = None
 _GENERATOR_MODEL = None
+_QUESTION_CACHE: Dict[str, Set[str]] = {}  # Track generated question hashes by session
+_CACHE_EXPIRY: Dict[str, datetime] = {}  # Expiry for cached sessions (12 hours)
+_CACHE_TTL = timedelta(hours=12)
+
+HF_MODEL_OPTIONS = [
+    {
+        "id": "gemini/gemini-1.5-flash",
+        "label": "Google Gemini 1.5 Flash (Recommended - Free & Ultra Fast)",
+        "best_for": "Outstanding speed, high quality, and robust structured assessments",
+        "api": True,
+    },
+    {
+        "id": "gemini/gemini-2.5-flash",
+        "label": "Google Gemini 2.5 Flash (Advanced)",
+        "best_for": "Advanced coding assessments and superior logical reasoning",
+        "api": True,
+    },
+    {
+        "id": "Qwen/Qwen2.5-7B-Instruct",
+        "label": "Qwen 2.5 7B Instruct (HuggingFace Serverless)",
+        "best_for": "Highly active open serverless model - Excellent multilingual/coding questions",
+        "api": True,
+    },
+    {
+        "id": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "label": "Llama 3 8B Instruct (HuggingFace Serverless)",
+        "best_for": "Lightweight serverless model - Strong general instructions",
+        "api": True,
+    },
+    {
+        "id": "mistralai/Mistral-7B-Instruct-v0.3",
+        "label": "Mistral 7B Instruct (HuggingFace Serverless)",
+        "best_for": "Strong lightweight general instructions",
+        "api": True,
+    },
+]
 
 
-def next_difficulty(current: str, was_correct: bool, time_taken: float, avg_time: float = 30.0) -> str:
-    """Rule-based adaptive difficulty engine."""
+def _clean_cache(session_id: str):
+    """Clean expired cache entries."""
+    if session_id in _CACHE_EXPIRY:
+        if datetime.now() > _CACHE_EXPIRY[session_id]:
+            _QUESTION_CACHE.pop(session_id, None)
+            _CACHE_EXPIRY.pop(session_id, None)
+
+
+def _get_question_hash(question_dict: Dict) -> str:
+    """Generate a hash for a question to detect duplicates."""
+    key_parts = [
+        question_dict.get("text", "").lower().strip(),
+        question_dict.get("topic", "").lower().strip(),
+        question_dict.get("difficulty", "").lower().strip(),
+    ]
+    if question_dict.get("question_type") == "mcq":
+        key_parts.extend(sorted(str(o).lower().strip() for o in question_dict.get("options", [])))
+    return hashlib.md5("|".join(key_parts).encode()).hexdigest()
+
+
+def _is_duplicate(question_dict: Dict, session_id: str) -> bool:
+    """Check if question has been generated in this session."""
+    _clean_cache(session_id)
+    if session_id not in _QUESTION_CACHE:
+        _QUESTION_CACHE[session_id] = set()
+        _CACHE_EXPIRY[session_id] = datetime.now() + _CACHE_TTL
+    
+    q_hash = _get_question_hash(question_dict)
+    if q_hash in _QUESTION_CACHE[session_id]:
+        return True
+    _QUESTION_CACHE[session_id].add(q_hash)
+    return False
+
+
+async def _call_gemini_api(prompt: str, model: str = "gemini-1.5-flash", max_tokens: int = 2400) -> Optional[str]:
+    """Call Google Gemini API directly using httpx."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("Gemini API key is not configured.")
+        return None
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": prompt
+            }]
+        }],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": float(os.environ.get("HF_TEMPERATURE", "0.7")),
+            "maxOutputTokens": max_tokens
+        }
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                if parts and "text" in parts[0]:
+                    return parts[0]["text"]
+            else:
+                print(f"Gemini API error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Gemini API call failed: {e}")
+    
+    return None
+
+
+async def _call_hf_api(prompt: str, model: str, max_tokens: int = 2400) -> Optional[str]:
+    """Call HuggingFace Inference API."""
+    api_key = os.environ.get("HF_API_KEY")
+    if not api_key:
+        return None
+    
+    url = f"https://api-inference.huggingface.co/models/{model}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": max_tokens,
+            "temperature": float(os.environ.get("HF_TEMPERATURE", "0.7")),
+            "top_p": float(os.environ.get("HF_TOP_P", "0.92")),
+            "top_k": int(os.environ.get("HF_TOP_K", "40")),
+            "repetition_penalty": float(os.environ.get("HF_REPETITION_PENALTY", "1.1")),
+            "do_sample": True,
+        },
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) > 0:
+                    return data[0].get("generated_text", "")
+                elif isinstance(data, dict):
+                    return data.get("generated_text", "")
+            else:
+                print(f"HF API error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"HF API call failed: {e}")
+    
+    return None
+def next_difficulty(current: str, was_correct: bool, time_taken_seconds: Optional[float] = None) -> str:
     order = ["easy", "medium", "hard"]
     idx = order.index(current) if current in order else 1
-    if was_correct:
-        idx = min(idx + 1, 2)
-    else:
-        idx = max(idx - 1, 0)
-    return order[idx]
+    return order[min(idx + 1, 2)] if was_correct else order[max(idx - 1, 0)]
 
-
-def compute_trust_score(
-    violations: List[Dict],
-    answers: List[Dict],
-    total_questions: int,
-) -> float:
-    """Compute trust score 0-100 based on violations + behaviour."""
+def compute_trust_score(violations: List[Dict], answers: List[Dict], total_questions: int) -> float:
     score = 100.0
     penalties = {
         "tab_switch": 8,
+        "out_of_window": 10,
         "focus_loss": 5,
         "copy_attempt": 6,
         "paste_attempt": 10,
         "right_click": 2,
         "fullscreen_exit": 7,
-        "no_face": 8,
+        "no_face": 10,
         "multi_face": 15,
         "rapid_answer": 4,
         "devtools": 12,
@@ -51,6 +187,8 @@ def compute_trust_score(
         "screen_share_stopped": 15,
         "camera_dark": 6,
         "camera_blurry": 4,
+        "face_scan_missing": 12,
+        "looking_away": 8,
     }
     for v in violations:
         score -= penalties.get(v.get("type", ""), 3)
@@ -64,7 +202,15 @@ def compute_trust_score(
 
 
 def _extract_json(text: str) -> Optional[list]:
-    """Extract a JSON array from LLM response."""
+    if not text:
+        return None
+    text = text.strip()
+    
+    # Remove markdown code-block wrappers if present
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+    text = text.strip()
+    
     try:
         data = json.loads(text)
         if isinstance(data, list):
@@ -74,10 +220,14 @@ def _extract_json(text: str) -> Optional[list]:
     except Exception:
         pass
 
+    # Fallback to finding JSON array via regex
     match = re.search(r"\[\s*\{.*\}\s*\]", text, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(0))
+            cleaned_json = match.group(0)
+            # Remove trailing commas inside braces/brackets
+            cleaned_json = re.sub(r",\s*(\]|\})", r"\1", cleaned_json)
+            return json.loads(cleaned_json)
         except Exception:
             return None
     return None
@@ -87,6 +237,103 @@ def _question_key(text: str) -> str:
     return re.sub(r"\W+", " ", text.lower()).strip()
 
 
+def _keywords(details: str, topic: str) -> List[str]:
+    words = re.findall(r"[A-Za-z][A-Za-z0-9+#.-]{2,}", f"{topic} {details}")
+    stop = {"the", "and", "for", "with", "that", "this", "from", "assessment", "question", "quiz", "student"}
+    out = []
+    for word in words:
+        clean = word.strip(".,:;").lower()
+        if clean not in stop and clean not in out:
+            out.append(clean)
+    return out[:18] or [topic.strip() or "core concept"]
+
+
+def _fallback_questions(
+    topic_text: str,
+    details_text: str,
+    difficulty: str,
+    count: int,
+    question_type: str,
+    language: str,
+    start_index: int = 0,
+) -> List[Dict]:
+    concepts = _keywords(details_text, topic_text)
+    items = []
+    mcq_stems = [
+        "A student is applying {concept} in a new scenario. Which decision is most appropriate?",
+        "Which option best identifies the misconception about {concept}?",
+        "In the context provided by the admin, what is the strongest reason for using {concept}?",
+        "Which outcome would most likely happen if {concept} is applied incorrectly?",
+        "Which example best demonstrates practical understanding of {concept}?",
+        "Which statement is most accurate when comparing {concept} with related ideas?",
+        "A teacher asks students to justify {concept}. Which response is strongest?",
+        "Which detail from the prompt is most important for solving a problem about {concept}?",
+    ]
+    coding_stems = [
+        "Write a {language} function that solves a realistic problem involving {concept}.",
+        "Implement input parsing and validation in {language} for a task based on {concept}.",
+        "Debug and complete a {language} program that applies {concept}.",
+        "Design an efficient {language} solution for a school/college exercise on {concept}.",
+        "Create a {language} program that transforms data using {concept}.",
+    ]
+
+    for offset in range(count):
+        idx = start_index + offset
+        concept = concepts[idx % len(concepts)]
+        if question_type == "coding":
+            text = coding_stems[idx % len(coding_stems)].format(language=language, concept=concept)
+            items.append({
+                "text": f"{text}\n\nAdmin prompt context: {details_text[:450]}",
+                "options": [],
+                "correct_index": -1,
+                "difficulty": difficulty,
+                "topic": topic_text,
+                "explanation": "Draft coding problem generated from the admin prompt. Review constraints and hidden tests before approval.",
+                "question_type": "coding",
+                "language": language,
+                "starter_code": _starter_code(language, concept),
+                "sample_input": "5\n1 2 3 4 5",
+                "sample_output": "15",
+                "test_cases": ["Input: 3\\n2 4 6 | Output: 12", "Input: 1\\n10 | Output: 10"],
+            })
+        else:
+            stem = mcq_stems[idx % len(mcq_stems)].format(concept=concept)
+            correct_index = idx % 4
+            correct = f"The answer that directly applies {concept} to the admin's scenario"
+            distractors = [
+                f"A tempting but incomplete interpretation of {concept}",
+                "A generic answer that ignores the supplied prompt details",
+                "A statement that sounds technical but contradicts the scenario",
+            ]
+            options = distractors[:]
+            options.insert(correct_index, correct)
+            items.append({
+                "text": f"{stem}\nContext: {details_text[:300]}",
+                "options": options,
+                "correct_index": correct_index,
+                "difficulty": difficulty,
+                "topic": topic_text,
+                "explanation": f"The correct option is the only one grounded in the prompt's use of {concept}.",
+                "question_type": "mcq" if question_type == "mcq" else "composite",
+                "language": language if question_type == "composite" else "",
+                "starter_code": _starter_code(language, concept) if question_type == "composite" else "",
+                "sample_input": "5\n1 2 3 4 5" if question_type == "composite" else "",
+                "sample_output": "15" if question_type == "composite" else "",
+                "test_cases": [],
+            })
+    return items
+
+
+def _starter_code(language: str, concept: str) -> str:
+    if language == "javascript":
+        return f"function solve(input) {{\n  // TODO: implement using {concept}\n  return '';\n}}\n"
+    if language == "java":
+        return f"import java.util.*;\nclass Main {{\n  public static void main(String[] args) {{\n    // TODO: implement using {concept}\n  }}\n}}\n"
+    if language == "csharp":
+        return f"using System;\nclass Program {{\n  static void Main() {{\n    // TODO: implement using {concept}\n  }}\n}}\n"
+    return f"def solve(data):\n    # TODO: implement using {concept}\n    return None\n"
+
+
 async def generate_questions_via_ai(
     topic: str,
     difficulty: str,
@@ -94,200 +341,167 @@ async def generate_questions_via_ai(
     session_id: str,
     details: str = "",
     question_type: str = "mcq",
+    model: str = "gemini/gemini-1.5-flash",
+    language: str = "python",
 ) -> List[Dict]:
-    """Generate draft MCQs with a local Hugging Face text-generation model.
-
-    Set HF_LOCAL_MODEL to a local model directory or a Hugging Face model id
-    that is already cached on the deployment host. A small starting point is
-    Qwen/Qwen3-0.6B; larger Qwen or Mistral instruct models will produce better
-    questions when the server has enough RAM/VRAM.
-    """
-    model_name = os.environ.get("HF_LOCAL_MODEL", "Qwen/Qwen3-0.6B")
-    max_new_tokens = int(os.environ.get("HF_MAX_NEW_TOKENS", "1600"))
-    topic_text = topic.strip() or "the quiz details supplied by the admin"
+    """Generate unique questions via Gemini API or HuggingFace serverless with deduplication."""
+    model_name = model or os.environ.get("HF_MODEL", "gemini/gemini-1.5-flash")
+    max_new_tokens = int(os.environ.get("HF_MAX_NEW_TOKENS", "2400"))
+    topic_text = topic.strip() or "admin supplied assessment content"
     details_text = details.strip() or "No extra admin details were provided."
+    qtype = question_type if question_type in {"mcq", "coding", "composite"} else "mcq"
 
-    prompt = f"""You are an expert school and college exam question setter.
-Create exactly {count} {question_type.upper()} questions.
+    schema = {
+        "mcq": '"text", "options" exactly 4 strings, "correct_index" 0-3, "explanation"',
+        "coding": '"text", "language", "starter_code", "sample_input", "sample_output", "test_cases" array, "explanation"',
+        "composite": '"text", "options" exactly 4 strings, "correct_index" 0-3, optional "starter_code", "sample_input", "sample_output", "explanation"',
+    }[qtype]
+    
+    prompt = f"""You are a senior school/college assessment designer creating UNIQUE questions.
+Generate exactly {count} UNIQUE {qtype.upper()} questions from the admin prompt below.
 
-Admin quiz details:
+ADMIN PROMPT AND QUIZ DETAILS:
 {details_text}
 
 Topic/focus: {topic_text}
 Difficulty: {difficulty}
+Preferred coding language: {language}
 
-Rules:
-- Use only information implied by the admin details and topic.
-- Return only a strict JSON array. No markdown. No prose.
-- Each item must have exactly these keys: "text", "options", "correct_index", "explanation".
-- "options" must contain exactly 4 distinct answer choices.
-- "correct_index" must be an integer from 0 to 3.
-- Explanations must be short and suitable for admin review.
+CRITICAL REQUIREMENTS:
+✓ Every question must test a DIFFERENT sub-skill, scenario, misconception, or application
+✓ Do NOT repeat any stems, option patterns, examples, numbers, or wording
+✓ Vary question structures significantly
+✓ Be creative yet faithful to admin prompt
+✓ Return ONLY a valid JSON array - no markdown formatting
+✓ Required fields: {schema}
+✓ Include "difficulty", "topic", "question_type" on every item
 
-JSON example:
-[{{"text":"Question text","options":["A","B","C","D"],"correct_index":0,"explanation":"Why A is correct."}}]
-"""
+RESPONSE FORMAT: [{{...}}, {{...}}]"""
 
-    def _fallback_questions(start_index: int = 0, needed: Optional[int] = None) -> List[Dict]:
-        base = topic_text if topic_text else "the provided lesson"
-        detail_hint = details_text.splitlines()[0][:120] if details_text else base
-        target = count if needed is None else needed
-        templates = [
-            (
-                "Which option best explains the central idea of {base} from the admin details?",
-                [
-                    "It correctly applies the main concept in the given context",
-                    "It repeats a related term without explaining the concept",
-                    "It describes a different topic not covered by the details",
-                    "It makes a broad claim that is not always true",
-                ],
-                "This checks whether the learner understands the main concept, not just a keyword.",
-            ),
-            (
-                "Which example would be the most appropriate application of {base}?",
-                [
-                    "An example that follows the rule or process described",
-                    "An example that ignores an important condition",
-                    "An example from a different subject area",
-                    "An example that uses the right words but wrong reasoning",
-                ],
-                "The correct option applies the concept in a valid situation.",
-            ),
-            (
-                "What is the most likely mistake a student might make while learning {base}?",
-                [
-                    "Confusing the core idea with a similar but different concept",
-                    "Reading the full question before answering",
-                    "Using evidence from the provided details",
-                    "Checking whether all options are distinct",
-                ],
-                "The question targets a common misconception for admin review.",
-            ),
-            (
-                "Which statement should be treated as true for {base}?",
-                [
-                    "The statement that matches the supplied learning details",
-                    "The statement that sounds technical but contradicts the details",
-                    "The statement that introduces unsupported information",
-                    "The statement that is too vague to verify",
-                ],
-                "The correct statement is grounded in the admin-provided material.",
-            ),
-            (
-                "Which question would best test understanding of {base}?",
-                [
-                    "A question that asks the learner to apply the concept",
-                    "A question based only on memorizing the title",
-                    "A question unrelated to the topic",
-                    "A question with no clearly correct answer",
-                ],
-                "Application-based questions are stronger indicators of understanding.",
-            ),
-            (
-                "Which answer best connects {base} with the quiz details: {hint}?",
-                [
-                    "It directly connects the topic to the stated lesson details",
-                    "It ignores the lesson details and gives a generic answer",
-                    "It changes the topic while sounding relevant",
-                    "It states an absolute rule without support",
-                ],
-                "The correct option is the one most aligned with the admin details.",
-            ),
-        ]
-        items = []
-        for offset in range(target):
-            idx = start_index + offset
-            text_template, raw_options, explanation = templates[idx % len(templates)]
-            correct_index = idx % 4
-            correct = raw_options[0]
-            distractors = raw_options[1:]
-            options = distractors[:]
-            options.insert(correct_index, correct)
-            items.append({
-                "text": text_template.format(base=base, hint=detail_hint),
-                "options": options,
-                "correct_index": correct_index,
-                "difficulty": difficulty,
-                "topic": topic_text,
-                "explanation": f"{explanation} Generated as a draft; please edit before approval.",
-                "question_type": "mcq",
-            })
-        return items
+    data = None
+    
+    # Check configurations
+    is_gemini = model_name.startswith("gemini/")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    hf_key = os.environ.get("HF_API_KEY")
 
-    if pipeline is None:
-        print("HF AI gen fallback: transformers is not installed")
-        return _fallback_questions()
+    # Try Gemini API if explicitly selected, or if Gemini is configured and HF is not
+    if is_gemini or (gemini_key and not hf_key):
+        gemini_model = model_name.split("/")[-1] if is_gemini else "gemini-1.5-flash"
+        print(f"Trying Gemini API generation with model: {gemini_model}")
+        gemini_response = await _call_gemini_api(prompt, gemini_model, max_new_tokens)
+        if gemini_response:
+            data = _extract_json(gemini_response)
+            if data:
+                print(f"✓ Generated via Gemini API ({gemini_model})")
 
-    def _run_generation() -> str:
-        global _GENERATOR, _GENERATOR_MODEL
-        if _GENERATOR is None or _GENERATOR_MODEL != model_name:
-            _GENERATOR = pipeline(
-                "text-generation",
-                model=model_name,
-                tokenizer=model_name,
-                device_map=os.environ.get("HF_DEVICE_MAP", "auto"),
-                trust_remote_code=os.environ.get("HF_TRUST_REMOTE_CODE", "false").lower() == "true",
-            )
-            _GENERATOR_MODEL = model_name
-        output = _GENERATOR(
-            prompt,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=float(os.environ.get("HF_TEMPERATURE", "0.4")),
-            top_p=float(os.environ.get("HF_TOP_P", "0.9")),
-            return_full_text=False,
-        )
-        if isinstance(output, list) and output:
-            return output[0].get("generated_text", "")
-        return str(output)
+    # Fallback to HuggingFace serverless API if no data yet and HF key is set
+    if not data and hf_key:
+        hf_model = model_name if not is_gemini else "Qwen/Qwen2.5-7B-Instruct"
+        print(f"Trying HuggingFace API generation with model: {hf_model}")
+        api_response = await _call_hf_api(prompt, hf_model, max_new_tokens)
+        if api_response:
+            data = _extract_json(api_response)
+            if data:
+                print(f"✓ Generated via HF API ({hf_model})")
 
-    try:
-        response = await asyncio.to_thread(_run_generation)
-    except Exception as e:
-        print(f"HF AI gen error: {e}")
-        return _fallback_questions()
-
-    data = _extract_json(response if isinstance(response, str) else str(response))
-    if not data:
-        return _fallback_questions()
-
-    valid = []
-    seen_questions = set()
-    for q in data:
+    # Local model fallback is intentionally opt-in because hosted environments
+    # like Render usually cannot load large Transformer models reliably.
+    local_fallback_enabled = os.environ.get("ENABLE_LOCAL_AI_FALLBACK", "false").lower() == "true"
+    if not data and local_fallback_enabled and pipeline is not None:
         try:
-            options = [str(o).strip() for o in q.get("options", [])]
-            text = q["text"].strip()
-            key = _question_key(text)
-            if (
-                isinstance(q.get("text"), str)
-                and key
-                and key not in seen_questions
-                and len(options) == 4
-                and len(set(options)) == 4
-                and isinstance(q.get("correct_index"), int)
-                and 0 <= q["correct_index"] <= 3
-            ):
-                seen_questions.add(key)
-                valid.append(
-                    {
-                        "text": text,
-                        "options": options,
-                        "correct_index": int(q["correct_index"]),
-                        "difficulty": difficulty,
-                        "topic": topic_text,
-                        "explanation": str(q.get("explanation", "")).strip(),
-                        "question_type": "mcq",
-                    }
+            def _run_local_generation() -> str:
+                global _GENERATOR, _GENERATOR_MODEL
+                local_model = model_name if not is_gemini else "Qwen/Qwen2.5-7B-Instruct"
+                if _GENERATOR is None or _GENERATOR_MODEL != local_model:
+                    print(f"Loading local model: {local_model}")
+                    _GENERATOR = pipeline(
+                        "text-generation",
+                        model=local_model,
+                        tokenizer=local_model,
+                        device_map=os.environ.get("HF_DEVICE_MAP", "auto"),
+                        trust_remote_code=os.environ.get("HF_TRUST_REMOTE_CODE", "false").lower() == "true",
+                    )
+                    _GENERATOR_MODEL = local_model
+                output = _GENERATOR(
+                    prompt,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
+                    temperature=float(os.environ.get("HF_TEMPERATURE", "0.7")),
+                    top_p=float(os.environ.get("HF_TOP_P", "0.92")),
+                    top_k=int(os.environ.get("HF_TOP_K", "40")),
+                    repetition_penalty=float(os.environ.get("HF_REPETITION_PENALTY", "1.1")),
+                    return_full_text=False,
                 )
-        except Exception:
+                return output[0].get("generated_text", "") if isinstance(output, list) and output else str(output)
+            
+            local_response = await asyncio.to_thread(_run_local_generation)
+            data = _extract_json(local_response)
+            print(f"✓ Generated via local model fallback")
+        except Exception as e:
+            print(f"Local model generation fallback failed: {e}")
+            data = None
+    
+    # Process and deduplicate results
+    valid = []
+    seen = set()
+    
+    for q in data or []:
+        try:
+            # Skip if already seen (duplicate detection)
+            if _is_duplicate(q, session_id):
+                continue
+            
+            text = str(q.get("text", "")).strip()
+            if not text:
+                continue
+            
+            key = _question_key(text)
+            if key in seen:
+                continue
+            
+            item = {
+                "text": text,
+                "options": [str(o).strip() for o in q.get("options", [])],
+                "correct_index": int(q.get("correct_index", -1)),
+                "difficulty": difficulty,
+                "topic": str(q.get("topic") or topic_text),
+                "explanation": str(q.get("explanation", "")).strip(),
+                "question_type": qtype,
+                "language": str(q.get("language") or language),
+                "starter_code": str(q.get("starter_code", "")),
+                "sample_input": str(q.get("sample_input", "")),
+                "sample_output": str(q.get("sample_output", "")),
+                "test_cases": [str(t) for t in q.get("test_cases", [])],
+            }
+            
+            # Validate based on question type
+            if qtype in {"mcq", "composite"}:
+                if len(item["options"]) != 4 or not (0 <= item["correct_index"] <= 3):
+                    continue
+            elif qtype == "coding":
+                item["options"] = []
+                item["correct_index"] = -1
+                if not item["starter_code"]:
+                    item["starter_code"] = _starter_code(language, topic_text)
+            
+            seen.add(key)
+            valid.append(item)
+            
+        except Exception as e:
+            print(f"Error processing question: {e}")
             continue
-
+    
+    # Fill gaps with fallback generator if needed
     if len(valid) < count:
-        for item in _fallback_questions(start_index=len(valid), needed=count - len(valid)):
+        gap = count - len(valid)
+        print(f"Filling {gap} questions with fallback generator")
+        for item in _fallback_questions(topic_text, details_text, difficulty, gap, qtype, language, len(valid)):
             key = _question_key(item["text"])
-            if key not in seen_questions:
-                seen_questions.add(key)
+            if key not in seen and not _is_duplicate(item, session_id):
+                seen.add(key)
                 valid.append(item)
-            if len(valid) >= count:
-                break
+                if len(valid) >= count:
+                    break
+    
     return valid[:count]

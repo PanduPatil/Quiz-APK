@@ -70,7 +70,11 @@ export default function AdminQuizzes() {
                 <Label>Question type</Label>
                 <Select value={form.question_type} onValueChange={(v) => setForm({...form, question_type: v})}>
                   <SelectTrigger className="rounded-sm mt-1"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="mcq">MCQ</SelectItem></SelectContent>
+                  <SelectContent>
+                    <SelectItem value="mcq">MCQ</SelectItem>
+                    <SelectItem value="coding">Coding</SelectItem>
+                    <SelectItem value="composite">Composite</SelectItem>
+                  </SelectContent>
                 </Select>
               </div>
               <div><Label>Topics (comma-separated)</Label><Input value={form.topics} onChange={e => setForm({...form, topics: e.target.value})} placeholder="Python, JavaScript" className="rounded-sm mt-1"/></div>

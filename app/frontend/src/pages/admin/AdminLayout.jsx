@@ -16,16 +16,17 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   return (
-    <div className="min-h-screen bg-white flex" data-testid="admin-layout">
-      <aside className="w-64 border-r border-zinc-200 bg-white flex flex-col">
+    <div className="min-h-screen bg-zinc-50/60 lg:bg-white flex flex-col lg:flex-row" data-testid="admin-layout">
+      <aside className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-zinc-200 bg-white flex lg:flex-col">
         <div className="p-5 border-b border-zinc-200">
           <Link to="/admin" className="flex items-center gap-2" data-testid="admin-logo-link">
             <div className="w-8 h-8 bg-zinc-900 text-white flex items-center justify-center font-heading font-bold text-sm">Q</div>
             <span className="font-heading font-semibold tracking-tight">QuizAPK<span className="text-zinc-400">/admin</span></span>
           </Link>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1 overflow-x-auto lg:overflow-visible no-scrollbar">
           <div className="label-mono px-3 pb-2 pt-3">Workspace</div>
+          <div className="flex lg:block gap-1.5 min-w-max">
           {NAV.map((n) => {
             const Icon = n.icon;
             return (
@@ -36,8 +37,12 @@ export default function AdminLayout() {
               </NavLink>
             );
           })}
+          </div>
+          <Button variant="outline" size="sm" className="lg:hidden rounded-md mt-2" onClick={() => { logout(); nav("/"); }}>
+            <LogOut className="w-4 h-4 mr-2"/>Logout
+          </Button>
         </nav>
-        <div className="p-4 border-t border-zinc-200">
+        <div className="hidden lg:block p-4 border-t border-zinc-200">
           <div className="text-sm font-medium truncate">{user?.name}</div>
           <div className="text-xs text-zinc-500 truncate">{user?.email}</div>
           <Button variant="outline" size="sm" className="mt-3 w-full rounded-sm" onClick={() => { logout(); nav("/"); }} data-testid="admin-logout-button">

@@ -25,18 +25,18 @@ export default function Landing() {
       </header>
 
       {/* Hero */}
-      <section className="grid-bg border-b border-zinc-200">
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 py-20 lg:py-28 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <section className="border-b border-zinc-200 bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.10),transparent_28%),linear-gradient(180deg,#ffffff_0%,#f4f4f5_100%)] dark:bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.12),transparent_28%),linear-gradient(180deg,#09090b_0%,#18181b_100%)]">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 py-14 md:py-20 lg:py-28 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
           <div className="lg:col-span-7">
             <div className="label-mono mb-6" data-testid="hero-tagline">Enterprise Exam Infrastructure - v1.0</div>
             <h1 className="font-heading text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
               AI-proctored assessments.<br/>
-              <span className="text-zinc-500">Built for production.</span>
+              <span className="text-zinc-500 dark:text-zinc-300">Built for production.</span>
             </h1>
-            <p className="mt-8 text-base md:text-lg text-zinc-600 max-w-xl leading-relaxed">
+            <p className="mt-8 text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-xl leading-relaxed">
               Run secure, adaptive, cheat-resistant online exams. Webcam proctoring, adaptive difficulty, real-time integrity scoring.
             </p>
-            <div className="mt-10 flex items-center gap-3">
+            <div className="mt-10 flex flex-col sm:flex-row sm:items-center gap-3">
               <Link to="/login" data-testid="hero-cta-signin">
                 <Button className="rounded-sm bg-zinc-900 hover:bg-zinc-800 text-white h-11 px-6">
                   Sign in to portal <ArrowUpRight className="ml-2 w-4 h-4" />
@@ -56,7 +56,7 @@ export default function Landing() {
           </div>
 
           <div className="lg:col-span-5">
-            <div className="card-flat p-6">
+            <div className="card-flat p-6 rounded-lg shadow-sm">
               <div className="flex items-center justify-between pb-4 border-b border-zinc-200">
                 <span className="label-mono">Control Room Preview</span>
                 <span className="flex items-center gap-2 text-xs text-zinc-500"><span className="live-dot"/> LIVE</span>
@@ -78,7 +78,7 @@ export default function Landing() {
       </section>
 
       {/* Features grid */}
-      <section className="max-w-7xl mx-auto px-6 lg:px-12 py-20">
+      <section className="max-w-7xl mx-auto px-6 lg:px-12 py-16 md:py-20">
         <div className="label-mono mb-4">Capabilities</div>
         <h2 className="font-heading text-3xl md:text-4xl font-semibold tracking-tight max-w-2xl">
           Everything a hiring test platform needs. Nothing it doesn't.

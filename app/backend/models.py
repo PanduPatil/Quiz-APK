@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Literal
 from datetime import datetime, timezone
 import uuid
@@ -44,12 +44,17 @@ class TokenResponse(BaseModel):
 # ---------- QUESTIONS ----------
 class QuestionIn(BaseModel):
     text: str
-    options: List[str]
-    correct_index: int
+    options: List[str] = []
+    correct_index: int = -1
     difficulty: Literal["easy", "medium", "hard"] = "medium"
     topic: str = "General"
     explanation: Optional[str] = ""
-    question_type: Literal["mcq"] = "mcq"
+    question_type: Literal["mcq", "coding", "composite"] = "mcq"
+    language: Optional[str] = ""
+    starter_code: Optional[str] = ""
+    sample_input: Optional[str] = ""
+    sample_output: Optional[str] = ""
+    test_cases: List[str] = []
 
 
 class Question(QuestionIn):
@@ -67,6 +72,11 @@ class QuestionPublic(BaseModel):
     options: List[str]
     difficulty: str
     topic: str
+    question_type: str = "mcq"
+    language: Optional[str] = ""
+    starter_code: Optional[str] = ""
+    sample_input: Optional[str] = ""
+    sample_output: Optional[str] = ""
 
 
 # ---------- QUIZZES ----------
@@ -77,7 +87,8 @@ class QuizIn(BaseModel):
     total_questions: int = 10
     topics: List[str] = []
     generation_instructions: str = ""
-    question_type: Literal["mcq"] = "mcq"
+    question_type: Literal["mcq", "coding", "composite"] = "mcq"
+    allowed_languages: List[str] = ["python", "javascript", "java", "csharp"]
     adaptive: bool = True
     max_violations: int = 3
 
@@ -98,7 +109,9 @@ class AttemptStart(BaseModel):
 class AnswerSubmit(BaseModel):
     attempt_id: str
     question_id: str
-    selected_index: int
+    selected_index: int = -1
+    code_answer: Optional[str] = ""
+    language: Optional[str] = ""
     time_taken_seconds: float
 
 
@@ -116,6 +129,9 @@ class AttemptAnswer(BaseModel):
     is_correct: bool
     difficulty: str
     topic: str
+    question_type: str = "mcq"
+    code_answer: Optional[str] = ""
+    language: Optional[str] = ""
     time_taken_seconds: float
     answered_at: str = Field(default_factory=_now_iso)
 
@@ -143,4 +159,6 @@ class AIGenerateIn(BaseModel):
     difficulty: Literal["easy", "medium", "hard"] = "medium"
     count: int = 5
     details: str = ""
-    question_type: Literal["mcq"] = "mcq"
+    question_type: Literal["mcq", "coding", "composite"] = "mcq"
+    model: str = "gemini/gemini-1.5-flash"
+    language: str = "python"
