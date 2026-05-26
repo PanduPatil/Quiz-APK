@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -36,6 +36,12 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---------- ROOT ----------
+@app.get("/")
+async def root():
+    return {"message": "AI Quiz Portal API", "status": "ok"}
+
+
 # ---------- AUTH ----------
 async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     payload = decode_token(creds.credentials)
@@ -54,7 +60,7 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 @api.get("/")
-async def root():
+async def api_root():
     return {"message": "AI Quiz Portal API", "status": "ok"}
 
 
