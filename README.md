@@ -726,7 +726,7 @@ For issues and questions:
 
 ## 👨‍💻 Author
 
-**Pandu Patil** - [GitHub](https://github.com/PanduPatil)
+**Pandurang Patil** - [GitHub](https://github.com/PanduPatil)
 
 ---
 
